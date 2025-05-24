@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# Fortress - Single VPS Production Deployment Tool
+# Main CLI entry point
+
+set -e
+trap 'error "$(printf "Command \`%s\` at $BASH_SOURCE:$LINENO failed with exit code $?" "$BASH_COMMAND")"' ERR
+
+## Find directory where this script is located
+readonly FORTRESS_DIR="$(
+  cd "$(
+    dirname "$(
+      (readlink "${BASH_SOURCE[0]}" || echo "${BASH_SOURCE[0]}") \
+        | sed -e "s#^../#$(dirname "$(dirname "${BASH_SOURCE[0]}")")/#"
+    )"
+  )/.." >/dev/null \
+  && pwd
+)"
+
+export readonly FORTRESS_BIN="${FORTRESS_DIR}/bin/fortress"
+export readonly FORTRESS_VERSION="1.0.0"
+export readonly DOCKER_COMPOSE_COMMAND="${DOCKER_COMPOSE_COMMAND:-"docker compose"}"
+
+# Load core utilities
+source "${FORTRESS_DIR}/utils/core.sh"
+source "${FORTRESS_DIR}/utils/apps.sh"
+source "${FORTRESS_DIR}/utils/proxy.sh"
+source "${FORTRESS_DIR}/utils/backup.sh"
+
+## Verify docker is installed
+if ! which docker >/dev/null; then
+  fatal "Docker could not be found. Please install Docker first."
+fi
+
+## Verify docker compose is available
+if ! ${DOCKER_COMPOSE_COMMAND} version >/dev/null 2>&1; then
+  fatal "Docker Compose could not be found. Please install Docker Compose v2."
+fi
+
+## Define fortress directories
+export readonly FORTRESS_ROOT="${FORTRESS_ROOT:-/opt/fortress}"
+export readonly FORTRESS_APPS_DIR="${FORTRESS_ROOT}/apps"
+export readonly FORTRESS_PROXY_DIR="${FORTRESS_ROOT}/proxy"
+export readonly FORTRESS_SERVICES_DIR="${FORTRESS_ROOT}/services"
+export readonly FORTRESS_BACKUPS_DIR="${FORTRESS_ROOT}/backups"
+export readonly FORTRESS_CONFIG_DIR="${FORTRESS_ROOT}/config"
+
+## Command variables
+declare FORTRESS_HELP=
+declare FORTRESS_PARAMS=()
+declare FORTRESS_CMD_VERB=
+declare FORTRESS_CMD_EXEC=
+declare FORTRESS_CMD_HELP=
+
+## Parse arguments
+if (( "$#" )); then
+  # Check for command
+  if [[ -f "${FORTRESS_DIR}/commands/${1}.cmd" ]]; then
+    FORTRESS_CMD_VERB="$1"
+    FORTRESS_CMD_EXEC="${FORTRESS_DIR}/commands/${1}.cmd"
+    FORTRESS_CMD_HELP="${FORTRESS_DIR}/commands/${1}.help"
+    shift
+  else
+    FORTRESS_HELP=1
+  fi
+else
+  FORTRESS_HELP=1
+fi
+
+## Parse remaining arguments
+while (( "$#" )); do
+  case "$1" in
+    -h|--help)
+      FORTRESS_HELP=1
+      break
+      ;;
+    --version)
+      echo "Fortress version ${FORTRESS_VERSION}"
+      exit 0
+      ;;
+    --debug)
+      set -x
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      fatal "Unsupported flag $1"
+      ;;
+    *)
+      FORTRESS_PARAMS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+## Display help if needed
+if [[ ${FORTRESS_HELP} ]]; then
+  if [[ -f "${FORTRESS_CMD_HELP}" ]]; then
+    source "${FORTRESS_CMD_HELP}"
+    echo -e "${FORTRESS_USAGE}"
+  else
+    cat <<EOF
+$(echo -e "${COLOR_CYAN}")
+   ___         _                   
+  / __\__  _ _| |_ _ __ ___  ___ ___
+ / _\/ _ \| '__| __| '__/ _ \/ __/ __|
+/ / | (_) | |  | |_| | |  __/\__ \__ \\
+\/   \___/|_|   \__|_|  \___||___/___/
+$(echo -e "${COLOR_RESET}")
+Single VPS Production Deployment Tool v${FORTRESS_VERSION}
+
+$(echo -e "${COLOR_YELLOW}Usage:${COLOR_RESET}")
+  fortress <command> [options] [arguments]
+
+$(echo -e "${COLOR_YELLOW}Options:${COLOR_RESET}")
+  -h, --help        Display help information
+  --version         Display version information
+  --debug           Enable debug mode
+
+$(echo -e "${COLOR_YELLOW}Core Commands:${COLOR_RESET}")
+  install           Install Fortress on this server
+  svc               Manage shared services (postgres, redis, monitoring)
+  
+$(echo -e "${COLOR_YELLOW}App Management:${COLOR_RESET}")
+  app               Deploy and manage applications
+  logs              View application logs
+  exec              Execute commands in app containers
+  
+$(echo -e "${COLOR_YELLOW}Infrastructure:${COLOR_RESET}")
+  proxy             Manage Traefik proxy configuration
+  ssl               Manage SSL certificates
+  domain            Manage domain configurations
+  
+$(echo -e "${COLOR_YELLOW}Database:${COLOR_RESET}")
+  db                Database management commands
+  
+$(echo -e "${COLOR_YELLOW}Operations:${COLOR_RESET}")
+  backup            Create and manage backups
+  restore           Restore from backups
+  monitor           View monitoring dashboards
+  health            Check system and app health
+  resources         View and manage resource usage
+  
+$(echo -e "${COLOR_YELLOW}Security:${COLOR_RESET}")
+  security          Security management commands
+  firewall          Manage firewall rules
+
+$(echo -e "${COLOR_YELLOW}Examples:${COLOR_RESET}")
+  # Deploy a new app
+  fortress app deploy myapp --domain=myapp.com --port=3000
+  
+  # View app logs
+  fortress logs myapp --follow
+  
+  # Create a backup
+  fortress backup create --full
+  
+  # Check system health
+  fortress health check --all
+
+For detailed help on any command, use: fortress <command> --help
+
+Documentation: https://fortress.dev/docs
+EOF
+  fi
+  exit 1
+fi
+
+## Ensure fortress directories exist
+if [[ "${FORTRESS_CMD_VERB}" != "install" ]]; then
+  if [[ ! -d "${FORTRESS_ROOT}" ]]; then
+    fatal "Fortress is not installed. Run 'fortress install' first."
+  fi
+fi
+
+## Execute command
+source "${FORTRESS_CMD_EXEC}"
