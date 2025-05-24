@@ -260,23 +260,20 @@ EOF
 chown -R fortress:fortress "${FORTRESS_SERVICES_DIR}/redis"
 
 info "Creating main Fortress configuration file..."
-local ADMIN_EMAIL_INPUT
 read -p "Enter admin email for Let's Encrypt (e.g., your-email@example.com): " ADMIN_EMAIL_INPUT
 while [[ -z "${ADMIN_EMAIL_INPUT}" ]]; do
     read -p "Admin email cannot be empty. Please enter a valid email: " ADMIN_EMAIL_INPUT
 done
 
-local FORTRESS_DOMAIN_INPUT
 read -p "Enter the primary domain for Fortress services (e.g., fortress.yourdomain.com, for monitor.*): " FORTRESS_DOMAIN_INPUT
 while [[ -z "${FORTRESS_DOMAIN_INPUT}" ]]; do
     read -p "Fortress domain cannot be empty. Please enter a valid domain: " FORTRESS_DOMAIN_INPUT
 done
 
-local POSTGRES_USER_DEF="fortress"
-local POSTGRES_PASSWORD_GEN=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
-local TRAEFIK_DASHBOARD_USER_DEF="admin"
-local TRAEFIK_DASHBOARD_PASSWORD_GEN=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
-local TRAEFIK_AUTH_USERS_HASHED
+POSTGRES_USER_DEF="fortress"
+POSTGRES_PASSWORD_GEN=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
+TRAEFIK_DASHBOARD_USER_DEF="admin"
+TRAEFIK_DASHBOARD_PASSWORD_GEN=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
 TRAEFIK_AUTH_USERS_HASHED=$(docker run --rm httpd:2.4 htpasswd -nbB "${TRAEFIK_DASHBOARD_USER_DEF}" "${TRAEFIK_DASHBOARD_PASSWORD_GEN}" | sed -e 's/\$/\$\$/g')
 
 mkdir -p "${FORTRESS_CONFIG_DIR}"
