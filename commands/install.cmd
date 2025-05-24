@@ -1,87 +1,98 @@
 #!/usr/bin/env bash
-# commands/install.cmd - Install Fortress on the server
 [[ ! ${FORTRESS_DIR} ]] && >&2 echo -e "\033[31mThis script is not intended to be run directly!\033[0m" && exit 1
 
-# Check if running as root or with sudo
 if [[ $EUID -ne 0 ]]; then
-   fatal "This command must be run as root or with sudo"
+    fatal "This command must be run as root or with sudo"
 fi
 
-info "Installing Fortress on this server..."
+info "Installing Fortress on this server (Rocky Linux 9)..."
 echo ""
 
-# Check OS compatibility
 if [[ ! -f /etc/os-release ]]; then
-  fatal "Cannot detect OS. This installer requires Ubuntu 20.04+ or Debian 11+"
+    fatal "Cannot detect OS. This installer requires Rocky Linux 9."
 fi
 
 source /etc/os-release
-if [[ "${ID}" != "ubuntu" ]] && [[ "${ID}" != "debian" ]]; then
-  fatal "This installer only supports Ubuntu and Debian"
+if [[ "${ID}" != "rocky" ]]; then
+    fatal "This installer currently supports Rocky Linux 9. Detected OS: ${ID}"
+fi
+if [[ ! "$(echo "${VERSION_ID}" | cut -d. -f1)" == "9" ]]; then
+    fatal "This installer requires Rocky Linux version 9. Detected version: ${VERSION_ID}"
 fi
 
-# Install dependencies
 info "Installing system dependencies..."
-apt-get update
-apt-get install -y \
-  curl \
-  git \
-  wget \
-  htop \
-  nano \
-  ufw \
-  fail2ban \
-  unattended-upgrades \
-  logrotate \
-  ca-certificates \
-  gnupg \
-  lsb-release
+dnf check-update -y || true
+if ! dnf list installed epel-release > /dev/null 2>&1; then
+    info "Installing EPEL repository..."
+    dnf install -y epel-release
+fi
+dnf install -y \
+    curl \
+    git \
+    wget \
+    htop \
+    nano \
+    firewalld \
+    fail2ban \
+    dnf-automatic \
+    logrotate \
+    ca-certificates \
+    gnupg \
+    policycoreutils-python-utils
 
-# Install Docker if not present
-if ! which docker >/dev/null; then
-  info "Installing Docker..."
-  curl -fsSL https://download.docker.com/linux/${ID}/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-  echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/${ID} \
-    $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-  apt-get update
-  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-  
-  # Start and enable Docker
-  systemctl start docker
-  systemctl enable docker
+if ! command -v docker &> /dev/null; then
+    info "Installing Docker Engine and Docker Compose plugin..."
+    if ! dnf config-manager --help &>/dev/null ; then
+        dnf install -y 'dnf-command(config-manager)'
+    fi
+    dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    
+    info "Starting and enabling Docker service..."
+    systemctl start docker
+    systemctl enable docker
+else
+    info "Docker is already installed."
 fi
 
-# Create fortress user
 if ! id -u fortress >/dev/null 2>&1; then
-  info "Creating fortress user..."
-  useradd -r -s /bin/bash -d /opt/fortress fortress
-  usermod -aG docker fortress
+    info "Creating 'fortress' system user..."
+    useradd -r -s /bin/bash -m -d "${FORTRESS_ROOT}" fortress
+    usermod -aG docker fortress
+    info "User 'fortress' created and added to 'docker' group."
+else
+    info "User 'fortress' already exists."
+    if ! groups fortress | grep -q '\bdocker\b'; then
+        usermod -aG docker fortress
+        info "Added existing user 'fortress' to 'docker' group."
+    fi
 fi
 
-# Create directory structure
-info "Creating Fortress directory structure..."
-mkdir -p "${FORTRESS_ROOT}"/{apps,proxy,services,backups,config,logs}
-mkdir -p "${FORTRESS_PROXY_DIR}"/{dynamic,certs}
-mkdir -p "${FORTRESS_SERVICES_DIR}"/{postgres,redis,monitoring,backup}
+info "Creating Fortress directory structure in ${FORTRESS_ROOT}..."
+mkdir -p "${FORTRESS_APPS_DIR}"
+mkdir -p "${FORTRESS_PROXY_DIR}"/{dynamic,acme,logs}
+mkdir -p "${FORTRESS_SERVICES_DIR}"/postgres/{data,backups}
+mkdir -p "${FORTRESS_SERVICES_DIR}"/redis/data
 mkdir -p "${FORTRESS_BACKUPS_DIR}"/{scheduled,manual,removed}
+mkdir -p "${FORTRESS_CONFIG_DIR}"
+mkdir -p "${FORTRESS_ROOT}/logs"
 
-# Set permissions
 chown -R fortress:fortress "${FORTRESS_ROOT}"
-chmod 700 "${FORTRESS_ROOT}"/backups
+chmod 700 "${FORTRESS_ROOT}/backups"
+chmod 750 "${FORTRESS_ROOT}"
 
-# Create Docker network
-if ! docker network ls | grep -q fortress; then
-  info "Creating Docker network..."
-  docker network create fortress
+if ! docker network inspect fortress >/dev/null 2>&1; then
+    info "Creating Docker network 'fortress'..."
+    docker network create fortress
+else
+    info "Docker network 'fortress' already exists."
 fi
 
-# Install Traefik
-info "Setting up Traefik proxy..."
+info "Setting up Traefik proxy configuration in ${FORTRESS_PROXY_DIR}..."
 cat > "${FORTRESS_PROXY_DIR}/traefik.yml" <<'EOF'
 api:
   dashboard: true
-  
+
 entryPoints:
   web:
     address: ":80"
@@ -93,16 +104,17 @@ entryPoints:
           permanent: true
   websecure:
     address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
 
 certificatesResolvers:
   letsencrypt:
     acme:
       email: ${ADMIN_EMAIL}
-      storage: /etc/traefik/acme.json
+      storage: /etc/traefik/acme/acme.json
       httpChallenge:
         entryPoint: web
-      # Staging server for testing
-      # caServer: https://acme-staging-v02.api.letsencrypt.org/directory
 
 providers:
   docker:
@@ -120,37 +132,33 @@ log:
 
 accessLog:
   filePath: /var/log/traefik/access.log
+  bufferingSize: 100
+  filters:
+    statusCodes: "200-599"
 EOF
 
-# Create dynamic configuration
 cat > "${FORTRESS_PROXY_DIR}/dynamic/middlewares.yml" <<'EOF'
 http:
   middlewares:
-    security-headers:
+    fortress-security-headers:
       headers:
         stsSeconds: 31536000
         stsIncludeSubdomains: true
         stsPreload: true
+        forceSTSHeader: true
         contentTypeNosniff: true
-        browserXssFilter: true
+        contentSecurityPolicy: "frame-ancestors 'self'"
         referrerPolicy: "strict-origin-when-cross-origin"
-        customFrameOptionsValue: "SAMEORIGIN"
-        customResponseHeaders:
-          X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
-          X-Permitted-Cross-Domain-Policies: "none"
-          
-    rate-limit:
+
+    fortress-rate-limit:
       rateLimit:
         average: 100
         burst: 50
         
-    compress:
-      compress:
-        excludedContentTypes:
-          - text/event-stream
+    fortress-compress:
+      compress: {}
 EOF
 
-# Traefik docker-compose
 cat > "${FORTRESS_PROXY_DIR}/docker-compose.yml" <<'EOF'
 version: '3.8'
 
@@ -167,174 +175,193 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - TRAEFIK_AUTH_USERS=${TRAEFIK_AUTH_USERS}
+      - FORTRESS_DOMAIN=${FORTRESS_DOMAIN}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./dynamic:/etc/traefik/dynamic:ro
-      - ./certs:/etc/traefik/certs
+      - ./acme:/etc/traefik/acme
       - ./logs:/var/log/traefik
-      - acme:/etc/traefik/acme
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`monitor.${FORTRESS_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.dashboard.entrypoints=websecure"
-      - "traefik.http.routers.dashboard.tls=true"
-      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.routers.dashboard.middlewares=auth"
-      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_AUTH:-admin:$$2y$$10$$YourHashedPasswordHere}"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`monitor.${FORTRESS_DOMAIN}`)"
+      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+      - "traefik.http.routers.traefik-dashboard.middlewares=fortress-dashboard-auth@file"
+      - "traefik.http.middlewares.fortress-dashboard-auth.basicauth.users=${TRAEFIK_AUTH_USERS}"
 
 networks:
   fortress:
     external: true
-
-volumes:
-  acme:
 EOF
+chown -R fortress:fortress "${FORTRESS_PROXY_DIR}"
 
-# Install PostgreSQL
-info "Setting up PostgreSQL..."
+info "Setting up PostgreSQL service in ${FORTRESS_SERVICES_DIR}/postgres..."
 cat > "${FORTRESS_SERVICES_DIR}/postgres/docker-compose.yml" <<'EOF'
 version: '3.8'
-
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: fortress_postgres
     restart: unless-stopped
     networks:
       - fortress
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-fortress}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=postgres
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./data:/var/lib/postgresql/data
       - ./backups:/backups
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fortress}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
 networks:
   fortress:
     external: true
-
-volumes:
-  postgres_data:
 EOF
+chown -R fortress:fortress "${FORTRESS_SERVICES_DIR}/postgres"
 
-# Install Redis
-info "Setting up Redis..."
+info "Setting up Redis service in ${FORTRESS_SERVICES_DIR}/redis..."
 cat > "${FORTRESS_SERVICES_DIR}/redis/docker-compose.yml" <<'EOF'
 version: '3.8'
-
 services:
   redis:
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     container_name: fortress_redis
     restart: unless-stopped
     networks:
       - fortress
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data
+      - ./data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
 networks:
   fortress:
     external: true
-
-volumes:
-  redis_data:
 EOF
+chown -R fortress:fortress "${FORTRESS_SERVICES_DIR}/redis"
 
-# Create main configuration
-info "Creating main configuration..."
-ADMIN_EMAIL=""
-read -p "Enter admin email for Let's Encrypt: " ADMIN_EMAIL
+info "Creating main Fortress configuration file..."
+local ADMIN_EMAIL_INPUT
+read -p "Enter admin email for Let's Encrypt (e.g., your-email@example.com): " ADMIN_EMAIL_INPUT
+while [[ -z "${ADMIN_EMAIL_INPUT}" ]]; do
+    read -p "Admin email cannot be empty. Please enter a valid email: " ADMIN_EMAIL_INPUT
+done
 
-POSTGRES_PASSWORD=$(openssl rand -base64 32)
-TRAEFIK_PASSWORD=$(openssl rand -base64 32)
-TRAEFIK_HASH=$(docker run --rm httpd:alpine htpasswd -nbB admin "${TRAEFIK_PASSWORD}" | sed -e s/\\$/\\$\\$/g)
+local FORTRESS_DOMAIN_INPUT
+read -p "Enter the primary domain for Fortress services (e.g., fortress.yourdomain.com, for monitor.*): " FORTRESS_DOMAIN_INPUT
+while [[ -z "${FORTRESS_DOMAIN_INPUT}" ]]; do
+    read -p "Fortress domain cannot be empty. Please enter a valid domain: " FORTRESS_DOMAIN_INPUT
+done
 
+local POSTGRES_USER_DEF="fortress"
+local POSTGRES_PASSWORD_GEN=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
+local TRAEFIK_DASHBOARD_USER_DEF="admin"
+local TRAEFIK_DASHBOARD_PASSWORD_GEN=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
+local TRAEFIK_AUTH_USERS_HASHED
+TRAEFIK_AUTH_USERS_HASHED=$(docker run --rm httpd:2.4 htpasswd -nbB "${TRAEFIK_DASHBOARD_USER_DEF}" "${TRAEFIK_DASHBOARD_PASSWORD_GEN}" | sed -e 's/\$/\$\$/g')
+
+mkdir -p "${FORTRESS_CONFIG_DIR}"
 cat > "${FORTRESS_CONFIG_DIR}/fortress.env" <<EOF
-# Fortress Configuration
-FORTRESS_VERSION=${FORTRESS_VERSION}
-FORTRESS_DOMAIN=localhost
-ADMIN_EMAIL=${ADMIN_EMAIL}
+FORTRESS_VERSION="${FORTRESS_VERSION:-1.0.0}"
+FORTRESS_DOMAIN="${FORTRESS_DOMAIN_INPUT}"
+ADMIN_EMAIL="${ADMIN_EMAIL_INPUT}"
 
-# Database
-POSTGRES_USER=fortress
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_USER="${POSTGRES_USER_DEF}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD_GEN}"
 
-# Traefik
-TRAEFIK_AUTH=admin:${TRAEFIK_HASH}
+TRAEFIK_AUTH_USERS="${TRAEFIK_AUTH_USERS_HASHED}"
 
-# Backup
 BACKUP_RETENTION_DAYS=30
 BACKUP_SCHEDULE="0 2 * * *"
 
-# Resource Limits
-DEFAULT_CPU_LIMIT=0.5
-DEFAULT_MEMORY_LIMIT=512M
+DEFAULT_APP_CPU_LIMIT="0.5"
+DEFAULT_APP_MEMORY_LIMIT="512M"
 EOF
 
-# Secure the configuration file
 chmod 600 "${FORTRESS_CONFIG_DIR}/fortress.env"
 chown fortress:fortress "${FORTRESS_CONFIG_DIR}/fortress.env"
+info "Main configuration saved to ${FORTRESS_CONFIG_DIR}/fortress.env"
 
-# Setup firewall
-info "Configuring firewall..."
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp comment "SSH"
-ufw allow 80/tcp comment "HTTP"
-ufw allow 443/tcp comment "HTTPS"
-echo "y" | ufw enable
+info "Configuring firewall (firewalld)..."
+if ! systemctl is-active --quiet firewalld; then
+    info "Firewalld is not active. Starting and enabling..."
+    systemctl enable firewalld --now
+fi
+for service_name in ssh http https; do
+    if ! firewall-cmd --query-service="${service_name}" --permanent > /dev/null 2>&1; then
+        firewall-cmd --permanent --add-service="${service_name}"
+        info "Firewall: Added ${service_name} service."
+    else
+        info "Firewall: ${service_name} service already enabled."
+    fi
+done
+firewall-cmd --reload
+info "Firewall rules applied."
 
-# Setup fail2ban
-info "Configuring fail2ban..."
-cat > /etc/fail2ban/jail.local <<'EOF'
+info "Configuring Fail2ban..."
+mkdir -p /etc/fail2ban/jail.d
+cat > /etc/fail2ban/jail.d/fortress-defaults.conf <<EOF
 [DEFAULT]
-bantime = 3600
-findtime = 600
+bantime = 1h
+findtime = 10m
 maxretry = 5
+destemail = ${ADMIN_EMAIL_INPUT}
+sendername = Fail2ban-Fortress
+action = %(action_mwl)s
 
 [sshd]
 enabled = true
-port = 22
-filter = sshd
-logpath = /var/log/auth.log
+backend = systemd
 
 [docker-traefik]
 enabled = true
 filter = docker-traefik
-logpath = /opt/fortress/proxy/logs/access.log
+logpath = ${FORTRESS_PROXY_DIR}/logs/access.log
 port = http,https
+maxretry = 20
+findtime = 5m
+bantime = 15m
 EOF
 
-# Create fail2ban filter for Traefik
+mkdir -p /etc/fail2ban/filter.d
 cat > /etc/fail2ban/filter.d/docker-traefik.conf <<'EOF'
 [Definition]
-failregex = ^<HOST> - - \[.*\] ".*" (404|403|401) .*$
+failregex = ^<HOST> - .* "(GET|POST|HEAD) .*?" (400|401|403|404|405) .*$
+            ^<HOST> - .* "(GET|POST|HEAD) .*?(phpmyadmin|admin|wp-login|setup|config|backup|dump|sql|script) .*?" .*$
 ignoreregex =
 EOF
 
-systemctl restart fail2ban
+if systemctl enable fail2ban --now &> /dev/null; then
+    info "Fail2ban enabled and started/restarted."
+else
+    warning "Fail2ban already enabled or failed to start. Check 'systemctl status fail2ban'."
+    systemctl restart fail2ban || error "Failed to restart fail2ban."
+fi
 
-# Setup log rotation
-info "Configuring log rotation..."
-cat > /etc/logrotate.d/fortress <<'EOF'
-/opt/fortress/logs/*.log
-/opt/fortress/proxy/logs/*.log
-/opt/fortress/apps/*/logs/*.log
+info "Configuring log rotation for Fortress components..."
+cat > /etc/logrotate.d/fortress <<EOF
+${FORTRESS_PROXY_DIR}/logs/*.log
+${FORTRESS_APPS_DIR}/*/logs/*.log
+${FORTRESS_ROOT}/logs/*.log
 {
     daily
     missingok
@@ -345,64 +372,97 @@ cat > /etc/logrotate.d/fortress <<'EOF'
     create 0640 fortress fortress
     sharedscripts
     postrotate
-        docker kill -s USR1 fortress_traefik 2>/dev/null || true
+        if docker ps --format '{{.Names}}' | grep -qw '^fortress_traefik$'; then
+            docker kill -s USR1 fortress_traefik >/dev/null 2>&1 || true
+        fi
     endscript
 }
 EOF
+info "Logrotate configuration for Fortress created."
 
-# Create systemd service
-info "Creating systemd service..."
-cat > /etc/systemd/system/fortress.service <<'EOF'
+info "Creating systemd service 'fortress-core.service'..."
+cat > /etc/systemd/system/fortress-core.service <<EOF
 [Unit]
-Description=Fortress Production Deployment System
+Description=Fortress Core Services (Proxy, DB, Redis)
 Requires=docker.service
-After=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/fortress
-ExecStart=/usr/local/bin/fortress svc start
-ExecStop=/usr/local/bin/fortress svc stop
+EnvironmentFile=${FORTRESS_CONFIG_DIR}/fortress.env
+ExecStart=/usr/local/bin/fortress svc up -d proxy postgres redis
+ExecStop=/usr/local/bin/fortress svc down proxy postgres redis
 User=root
 StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Install fortress command globally
-info "Installing fortress command..."
+info "Installing 'fortress' command to /usr/local/bin/fortress..."
 ln -sf "${FORTRESS_BIN}" /usr/local/bin/fortress
 chmod +x /usr/local/bin/fortress
+info "'fortress' command is now globally available."
 
-# Start services
-info "Starting Fortress services..."
-cd "${FORTRESS_PROXY_DIR}" && docker compose up -d
-cd "${FORTRESS_SERVICES_DIR}/postgres" && docker compose up -d
-cd "${FORTRESS_SERVICES_DIR}/redis" && docker compose up -d
+info "Attempting initial start of Fortress core services (Traefik, PostgreSQL, Redis)..."
+if /usr/local/bin/fortress svc up -d proxy postgres redis; then
+    info "Fortress core services started successfully."
+else
+    error "Failed to start one or more Fortress core services during installation."
+    error "Please check Docker logs for 'fortress_traefik', 'fortress_postgres', 'fortress_redis'."
+    error "You might need to run 'sudo /usr/local/bin/fortress svc up -d proxy postgres redis' manually after checks."
+fi
 
-# Enable fortress service
 systemctl daemon-reload
-systemctl enable fortress
+systemctl enable fortress-core.service
+info "'fortress-core.service' enabled to manage core services on boot."
 
-# Final setup
-success "Fortress installation completed!"
+info "Configuring automatic system updates (dnf-automatic)..."
+if ! grep -q "^\s*apply_updates\s*=\s*yes" /etc/dnf/automatic.conf; then
+    if grep -q "^\s*#\?\s*apply_updates\s*=" /etc/dnf/automatic.conf; then
+        sed -i 's/^\s*#\?\s*apply_updates\s*=.*/apply_updates = yes/' /etc/dnf/automatic.conf
+    else
+        echo "apply_updates = yes" >> /etc/dnf/automatic.conf
+    fi
+    info "Enabled application of automatic updates in dnf-automatic."
+else
+    info "Application of automatic updates already enabled in dnf-automatic."
+fi
+if systemctl enable --now dnf-automatic.timer &> /dev/null; then
+    info "dnf-automatic.timer enabled and started for scheduled updates."
+else
+    warning "dnf-automatic.timer already enabled or failed to start. Check 'systemctl status dnf-automatic.timer'."
+fi
+
+success "Fortress installation on Rocky Linux 9 completed!"
 echo ""
 echo "=================================="
 echo "Installation Summary:"
 echo "=================================="
-echo "Admin Email: ${ADMIN_EMAIL}"
-echo "PostgreSQL Password: ${POSTGRES_PASSWORD}"
-echo "Traefik Dashboard: https://monitor.<your-domain>"
-echo "Traefik Username: admin"
-echo "Traefik Password: ${TRAEFIK_PASSWORD}"
+echo "Fortress Root: ${FORTRESS_ROOT}"
+echo "Admin Email (for Let's Encrypt): ${ADMIN_EMAIL_INPUT}"
+echo "Primary Fortress Domain (for monitor.* etc.): ${FORTRESS_DOMAIN_INPUT}"
 echo ""
-echo "Configuration saved to: ${FORTRESS_CONFIG_DIR}/fortress.env"
+echo "PostgreSQL User: ${POSTGRES_USER_DEF}"
+echo "PostgreSQL Password: ${POSTGRES_PASSWORD_GEN}"
+echo ""
+echo "Traefik Dashboard: https://monitor.${FORTRESS_DOMAIN_INPUT}"
+echo "Traefik Dashboard User: ${TRAEFIK_DASHBOARD_USER_DEF}"
+echo "Traefik Dashboard Password: ${TRAEFIK_DASHBOARD_PASSWORD_GEN}"
+echo ""
+echo "Main configuration: ${FORTRESS_CONFIG_DIR}/fortress.env"
+echo "Fortress CLI: /usr/local/bin/fortress"
 echo ""
 echo "Next steps:"
-echo "1. Point your domain(s) to this server's IP"
-echo "2. Update FORTRESS_DOMAIN in ${FORTRESS_CONFIG_DIR}/fortress.env"
-echo "3. Deploy your first app: fortress app deploy myapp --domain=myapp.com --port=3000"
+echo "1. IMPORTANT: Ensure the domain '${FORTRESS_DOMAIN_INPUT}' (and 'monitor.${FORTRESS_DOMAIN_INPUT}') points to this server's public IP address."
+echo "2. Review and secure generated passwords stored in ${FORTRESS_CONFIG_DIR}/fortress.env."
+echo "3. Implement the 'fortress svc' commands if not already done, as the systemd service relies on them."
+echo "4. To deploy your first app:"
+echo "   sudo fortress app deploy myapp --domain=myapp.${FORTRESS_DOMAIN_INPUT} --port=3000 --image=yourimage"
 echo ""
-warning "IMPORTANT: Save the passwords above in a secure location!"
+warning "IMPORTANT: Store the generated passwords (PostgreSQL, Traefik Dashboard) in a secure password manager!"
+echo ""
+
