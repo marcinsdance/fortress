@@ -56,11 +56,11 @@ execute_compose_for_services() {
             error "svc ${compose_main_action}: Docker Compose file not found for service '${service_name_item}' at ${compose_file_path}. Skipping."
             continue
         fi
-        
-        info "Service '${service_name_item}': Running ${DOCKER_COMPOSE_COMMAND} -p fortress_${service_name_item} ${compose_main_action} ${compose_flags_for_dc[*]}"
+    
+        info "Service '${service_name_item}': Running ${DOCKER_COMPOSE_COMMAND} ${compose_main_action} ${compose_flags_for_dc[*]} in ${service_item_dir}"
         (
             cd "${service_item_dir}" && \
-            ${DOCKER_COMPOSE_COMMAND} -p "fortress_${service_name_item}" "${compose_main_action}" "${compose_flags_for_dc[@]}"
+            ${DOCKER_COMPOSE_COMMAND} "${compose_main_action}" "${compose_flags_for_dc[@]}"
         )
         local exit_code=$?
         if [[ $exit_code -ne 0 ]]; then

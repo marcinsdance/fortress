@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+[[ ! ${FORTRESS_DIR} ]] && >&2 echo -e "\033[31mThis script is not intended to be run directly!\033[0m" && exit 1
+
+FORTRESS_USAGE=$(cat <<EOF
+$(echo -e "${COLOR_YELLOW}Usage:${COLOR_RESET}")
+  fortress proxy <subcommand> [options]
+
+$(echo -e "${COLOR_YELLOW}Description:${COLOR_RESET}")
+  Manages the Traefik reverse proxy service.
+  The proxy service configuration is located in: ${FORTRESS_PROXY_DIR}
+
+$(echo -e "${COLOR_YELLOW}Subcommands:${COLOR_RESET}")
+  start             Start the proxy service containers.
+  stop              Stop the proxy service containers.
+  restart           Restart the proxy service containers.
+  up [-d]           Builds, (re)creates, starts, and attaches to containers for proxy.
+                    Use '-d' to run in detached mode.
+  down [options]    Stop and remove proxy containers, networks. 
+                    Use '-v' to remove named volumes declared in the compose file.
+  ps [options]      List proxy service containers.
+  status            Alias for 'ps'. Shows status of proxy containers.
+  logs [options]    Fetch logs from the proxy service (e.g., 'logs -f --tail 100').
+  configtest        Test Traefik's static and dynamic configurations.
+                    (Runs 'traefik configtest' inside the container)
+  configdump        Dump Traefik's static and dynamic configurations.
+                    (Runs 'traefik configdump' inside the container)
+
+$(echo -e "${COLOR_YELLOW}Examples:${COLOR_RESET}")
+  fortress proxy restart
+  fortress proxy up -d
+  fortress proxy logs -f
+  fortress proxy status
+  fortress proxy configtest
+EOF
+)
+
