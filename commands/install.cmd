@@ -128,10 +128,10 @@ providers:
 
 log:
   level: INFO
-  filePath: /var/log/traefik/traefik.log
+#  filePath: /var/log/traefik/traefik.log
 
 accessLog:
-  filePath: /var/log/traefik/access.log
+#  filePath: /var/log/traefik/access.log
   bufferingSize: 100
   filters:
     statusCodes: "200-599"
@@ -160,8 +160,6 @@ http:
 EOF
 
 cat > "${FORTRESS_PROXY_DIR}/docker-compose.yml" <<'EOF'
-version: '3.8'
-
 services:
   traefik:
     image: traefik:v3.0
@@ -190,7 +188,7 @@ services:
       - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
       - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik-dashboard.service=api@internal"
-      - "traefik.http.routers.traefik-dashboard.middlewares=fortress-dashboard-auth@file"
+      - "traefik.http.routers.traefik-dashboard.middlewares=fortress-dashboard-auth"
       - "traefik.http.middlewares.fortress-dashboard-auth.basicauth.users=${TRAEFIK_AUTH_USERS}"
 
 networks:
@@ -201,7 +199,6 @@ chown -R fortress:fortress "${FORTRESS_PROXY_DIR}"
 
 info "Setting up PostgreSQL service in ${FORTRESS_SERVICES_DIR}/postgres..."
 cat > "${FORTRESS_SERVICES_DIR}/postgres/docker-compose.yml" <<'EOF'
-version: '3.8'
 services:
   postgres:
     image: postgres:16-alpine
@@ -233,7 +230,6 @@ chown -R fortress:fortress "${FORTRESS_SERVICES_DIR}/postgres"
 
 info "Setting up Redis service in ${FORTRESS_SERVICES_DIR}/redis..."
 cat > "${FORTRESS_SERVICES_DIR}/redis/docker-compose.yml" <<'EOF'
-version: '3.8'
 services:
   redis:
     image: redis:7.2-alpine
@@ -275,6 +271,7 @@ POSTGRES_PASSWORD_GEN=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
 TRAEFIK_DASHBOARD_USER_DEF="admin"
 TRAEFIK_DASHBOARD_PASSWORD_GEN=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
 TRAEFIK_AUTH_USERS_HASHED=$(docker run --rm httpd:2.4 htpasswd -nbB "${TRAEFIK_DASHBOARD_USER_DEF}" "${TRAEFIK_DASHBOARD_PASSWORD_GEN}" | sed -e 's/\$/\$\$/g')
+TRAEFIK_HTPASSWD_LINE_RAW=$(docker run --rm httpd:2.4 htpasswd -nbB "${TRAEFIK_DASHBOARD_USER_DEF}" "${TRAEFIK_DASHBOARD_PASSWORD_GEN}")
 
 mkdir -p "${FORTRESS_CONFIG_DIR}"
 cat > "${FORTRESS_CONFIG_DIR}/fortress.env" <<EOF
@@ -283,9 +280,9 @@ FORTRESS_DOMAIN="${FORTRESS_DOMAIN_INPUT}"
 ADMIN_EMAIL="${ADMIN_EMAIL_INPUT}"
 
 POSTGRES_USER="${POSTGRES_USER_DEF}"
-POSTGRES_PASSWORD="${POSTGRES_PASSWORD_GEN}"
+POSTGRES_PASSWORD='${POSTGRES_PASSWORD_GEN}'
 
-TRAEFIK_AUTH_USERS="${TRAEFIK_AUTH_USERS_HASHED}"
+TRAEFIK_AUTH_USERS='${TRAEFIK_HTPASSWD_LINE_RAW}'
 
 BACKUP_RETENTION_DAYS=30
 BACKUP_SCHEDULE="0 2 * * *"
