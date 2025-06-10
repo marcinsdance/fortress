@@ -17,10 +17,32 @@ export readonly FORTRESS_BIN="${FORTRESS_DIR}/bin/fortress"
 export readonly FORTRESS_VERSION="1.0.0"
 export readonly DOCKER_COMPOSE_COMMAND="${DOCKER_COMPOSE_COMMAND:-"docker compose"}"
 
-source "${FORTRESS_DIR}/utils/core.sh"
-source "${FORTRESS_DIR}/utils/apps.sh"
-source "${FORTRESS_DIR}/utils/proxy.sh"
-source "${FORTRESS_DIR}/utils/backup.sh"
+# Determine the correct source path for utilities
+if [[ "$FORTRESS_CMD_VERB" == "install" ]]; then
+    # During installation, source from the temporary cloned directory
+    source "${FORTRESS_DIR}/utils/core.sh"
+    source "${FORTRESS_DIR}/utils/apps.sh"
+    source "${FORTRESS_DIR}/utils/proxy.sh"
+    source "${FORTRESS_DIR}/utils/backup.sh"
+else
+    # After installation, source from the installed location
+    export readonly FORTRESS_ROOT="${FORTRESS_ROOT:-/opt/fortress}"
+    export readonly FORTRESS_APPS_DIR="${FORTRESS_ROOT}/apps"
+    export readonly FORTRESS_PROXY_DIR="${FORTRESS_ROOT}/proxy"
+    export readonly FORTRESS_SERVICES_DIR="${FORTRESS_ROOT}/services"
+    export readonly FORTRESS_BACKUPS_DIR="${FORTRESS_ROOT}/backups"
+    export readonly FORTRESS_CONFIG_DIR="${FORTRESS_ROOT}/config"
+
+    # Check if core utilities exist in the installed location before sourcing
+    if [[ ! -f "${FORTRESS_ROOT}/utils/core.sh" ]]; then
+        fatal "Fortress is not installed or core utilities are missing. Run 'fortress install' first."
+    fi
+
+    source "${FORTRESS_ROOT}/utils/core.sh"
+    source "${FORTRESS_ROOT}/utils/apps.sh"
+    source "${FORTRESS_ROOT}/utils/proxy.sh"
+    source "${FORTRESS_ROOT}/utils/backup.sh"
+fi
 
 if ! which docker >/dev/null; then
   fatal "Docker could not be found. Please install Docker first."
