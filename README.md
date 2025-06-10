@@ -71,17 +71,17 @@ The recommended way to install Fortress is using the remote installer script.
 
 ```bash
 # Run the one-line installer with sudo
-curl -fsSL https://raw.githubusercontent.com/marcinsdance/fortress/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/marcinsdance/fortress/master/install.sh | sudo bash
 ```
 
 ### Advanced Installation
 The installer script accepts flags for automated setups or for installing a specific version. Pass arguments after -s --.
 ```bash
 # Install non-interactively (for Ansible, etc.)
-curl -fsSL https://raw.githubusercontent.com/marcinsdance/fortress/main/install.sh | sudo bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/marcinsdance/fortress/master/install.sh | sudo bash -s -- --yes
 
 # Install a specific branch (e.g., 'develop')
-curl -fsSL https://raw.githubusercontent.com/marcinsdance/fortress/main/install.sh | sudo bash -s -- --branch develop
+curl -fsSL https://raw.githubusercontent.com/marcinsdance/fortress/master/install.sh | sudo bash -s -- --branch develop
 ```
 
 ### Deploy Your First App
