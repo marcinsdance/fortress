@@ -256,15 +256,26 @@ EOF
 chown -R fortress:fortress "${FORTRESS_SERVICES_DIR}/redis"
 
 info "Creating main Fortress configuration file..."
-read -p "Enter admin email for Let's Encrypt (e.g., your-email@example.com): " ADMIN_EMAIL_INPUT
-while [[ -z "${ADMIN_EMAIL_INPUT}" ]]; do
-    read -p "Admin email cannot be empty. Please enter a valid email: " ADMIN_EMAIL_INPUT
-done
 
-read -p "Enter the primary domain for Fortress services (e.g., fortress.yourdomain.com, for monitor.*): " FORTRESS_DOMAIN_INPUT
-while [[ -z "${FORTRESS_DOMAIN_INPUT}" ]]; do
-    read -p "Fortress domain cannot be empty. Please enter a valid domain: " FORTRESS_DOMAIN_INPUT
-done
+if [[ -n "${ADMIN_EMAIL}" ]]; then
+    ADMIN_EMAIL_INPUT="${ADMIN_EMAIL}"
+    info "Using ADMIN_EMAIL from environment: ${ADMIN_EMAIL_INPUT}"
+else
+    read -p "Enter admin email for Let's Encrypt (e.g., your-email@example.com): " ADMIN_EMAIL_INPUT
+    while [[ -z "${ADMIN_EMAIL_INPUT}" ]]; do
+        read -p "Admin email cannot be empty. Please enter a valid email: " ADMIN_EMAIL_INPUT
+    done
+fi
+
+if [[ -n "${FORTRESS_DOMAIN}" ]]; then
+    FORTRESS_DOMAIN_INPUT="${FORTRESS_DOMAIN}"
+    info "Using FORTRESS_DOMAIN from environment: ${FORTRESS_DOMAIN_INPUT}"
+else
+    read -p "Enter the primary domain for Fortress services (e.g., fortress.yourdomain.com, for monitor.*): " FORTRESS_DOMAIN_INPUT
+    while [[ -z "${FORTRESS_DOMAIN_INPUT}" ]]; do
+        read -p "Fortress domain cannot be empty. Please enter a valid domain: " FORTRESS_DOMAIN_INPUT
+    done
+fi
 
 POSTGRES_USER_DEF="fortress"
 POSTGRES_PASSWORD_GEN=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
