@@ -1,10 +1,25 @@
 #!/bin/bash
-
+#
+# Fortress: Professional, Non-Interactive 'One-Liner' Installer
+#
+# Version: 4.0
+# Features:
+# - Non-interactive mode (-y, --yes) for automation (e.g., Ansible)
+# - Root privilege verification
+# - Dependency checks (git, docker)
+# - OS compatibility check
+# - Argument parsing (--branch, --tag)
+# - Colored log output
+# - Reliable temporary file cleanup
+#
 set -e
 
+# --- Configuration ---
 readonly REPO_URL="https://github.com/marcinsdance/fortress.git"
-INSTALL_BRANCH="master"
+INSTALL_BRANCH="main"
+NON_INTERACTIVE=false
 
+# --- Colors and Logging Functions ---
 setup_colors() {
   if [[ -t 2 ]] && [[ -z "${NO_COLOR-}" ]]; then
     COLOR_RESET='\033[0m'
@@ -30,6 +45,7 @@ msg_success() { msg "SUCCESS: $1" "${COLOR_GREEN}"; }
 msg_warning() { msg "WARN: $1" "${COLOR_YELLOW}"; }
 msg_error() { msg "ERROR: $1" "${COLOR_RED}"; exit 1; }
 
+# --- Script Logic ---
 print_header() {
   cat << "EOF"
     ___              _
@@ -50,8 +66,17 @@ parse_args() {
         INSTALL_BRANCH="$2"
         shift 2
         ;;
+      -y|--yes)
+        NON_INTERACTIVE=true
+        shift 1
+        ;;
       -h|--help)
-        echo "Usage: $0 [--branch <branch_name>] [--tag <tag_name>]"
+        echo "Usage: $0 [--branch <name>] [--tag <name>] [-y|--yes]"
+        echo ""
+        echo "Options:"
+        echo "  --branch <name>  Install from a specific branch."
+        echo "  --tag <name>     Install a specific tag."
+        echo "  -y, --yes        Bypass confirmation prompts for non-interactive/automated installation."
         exit 0
         ;;
       *)
@@ -85,18 +110,30 @@ check_dependencies() {
 check_os() {
   msg_info "Checking OS compatibility..."
   if [[ ! -f /etc/os-release ]]; then
-    msg_warning "Cannot detect OS. /etc/os-release not found. Proceed at your own risk."
+    msg_warning "Cannot detect OS: /etc/os-release not found."
+    if [[ "$NON_INTERACTIVE" == "true" ]]; then
+        msg_error "Aborting in non-interactive mode."
+    fi
+    read -p "Proceed at your own risk? (y/N) " -n 1 -r
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+        msg_error "Installation cancelled by user."
+    fi
     return
   fi
 
   source /etc/os-release
   case "${ID}" in
-    rocky|ubuntu|debian)
+    rocky)
       msg_success "Detected supported OS: ${PRETTY_NAME}"
       ;;
     *)
-      msg_warning "Detected unsupported OS: ${PRETTY_NAME}."
-      read -p "Fortress is tested only on Rocky. Continue anyway? (y/N) " -n 1 -r
+      local warning_msg="Detected OS '${PRETTY_NAME}'. Fortress is officially tested on Rocky Linux 9."
+      if [[ "$NON_INTERACTIVE" == "true" ]]; then
+        msg_error "${warning_msg} Aborting in non-interactive mode."
+      fi
+      msg_warning "${warning_msg}"
+      read -p "Proceed with the installation at your own risk? (y/N) " -n 1 -r
       echo
       if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         msg_error "Installation cancelled by user."
@@ -106,6 +143,11 @@ check_os() {
 }
 
 confirm_installation() {
+  if [[ "$NON_INTERACTIVE" == "true" ]]; then
+    msg_info "Non-interactive mode enabled. Bypassing confirmation."
+    return
+  fi
+
   echo ""
   msg_info "The script is ready to install Fortress from branch/tag: '${INSTALL_BRANCH}'"
   read -p "Do you want to proceed with the installation? (Y/n) " -r
@@ -117,7 +159,7 @@ confirm_installation() {
 clone_and_install() {
   local tmp_dir
   tmp_dir=$(mktemp -d -t fortress-install-XXXXXX)
-  trap 'echo "Cleaning up..."; rm -rf "$tmp_dir"' EXIT
+  trap 'echo "Cleaning up temporary files..."; rm -rf "$tmp_dir"' EXIT
 
   msg_info "Cloning Fortress repository ('${INSTALL_BRANCH}' branch/tag) into a temporary directory..."
   if ! git clone --depth 1 --branch "$INSTALL_BRANCH" "$REPO_URL" "$tmp_dir"; then
@@ -130,6 +172,7 @@ clone_and_install() {
   fi
 }
 
+# --- Main execution function ---
 main() {
   setup_colors
   parse_args "$@"
@@ -143,4 +186,5 @@ main() {
   msg_info "Follow the prompts from the installer. Generated passwords and details will be shown upon its completion."
 }
 
+# Run the script, passing all arguments to main
 main "$@"
