@@ -272,7 +272,7 @@ PARSED_ADMIN_EMAIL=""
 PARSED_FORTRESS_DOMAIN=""
 CMD_PARAMS=("${FORTRESS_PARAMS[@]}") # Use the FORTRESS_PARAMS array from bin/fortress
 
-local i=0
+i=0
 while [[ $i -lt ${#CMD_PARAMS[@]} ]]; do
   local arg="${CMD_PARAMS[$i]}"
   case $arg in
