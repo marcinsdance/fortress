@@ -47,7 +47,7 @@ if ! command -v docker &> /dev/null; then
     fi
     dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-    
+
     info "Starting and enabling Docker service..."
     systemctl start docker
     systemctl enable docker
@@ -76,6 +76,15 @@ mkdir -p "${FORTRESS_SERVICES_DIR}"/redis/data
 mkdir -p "${FORTRESS_BACKUPS_DIR}"/{scheduled,manual,removed}
 mkdir -p "${FORTRESS_CONFIG_DIR}"
 mkdir -p "${FORTRESS_ROOT}/logs"
+
+# --- NEW ADDITION: Copy Fortress core files to their final destination ---
+info "Copying Fortress core scripts, commands, and utilities to ${FORTRESS_ROOT}..."
+mkdir -p "${FORTRESS_ROOT}/bin" # Ensure bin directory exists
+cp -r "${FORTRESS_DIR}/commands" "${FORTRESS_ROOT}/"
+cp -r "${FORTRESS_DIR}/utils" "${FORTRESS_ROOT}/"
+cp "${FORTRESS_DIR}/bin/fortress" "${FORTRESS_ROOT}/bin/fortress"
+chmod +x "${FORTRESS_ROOT}/bin/fortress"
+# --- END NEW ADDITION ---
 
 chown -R fortress:fortress "${FORTRESS_ROOT}"
 chmod 700 "${FORTRESS_ROOT}/backups"
@@ -154,7 +163,7 @@ http:
       rateLimit:
         average: 100
         burst: 50
-        
+
     fortress-compress:
       compress: {}
 EOF
@@ -257,7 +266,32 @@ chown -R fortress:fortress "${FORTRESS_SERVICES_DIR}/redis"
 
 info "Creating main Fortress configuration file..."
 
-if [[ -n "${ADMIN_EMAIL}" ]]; then
+# Parse command line arguments for ADMIN_EMAIL and FORTRESS_DOMAIN
+# This block will handle values passed directly to 'fortress install --admin-email ...'
+local PARSED_ADMIN_EMAIL=""
+local PARSED_FORTRESS_DOMAIN=""
+local CMD_PARAMS=("${FORTRESS_PARAMS[@]}") # Use the FORTRESS_PARAMS array from bin/fortress
+
+local i=0
+while [[ $i -lt ${#CMD_PARAMS[@]} ]]; do
+  local arg="${CMD_PARAMS[$i]}"
+  case $arg in
+    --admin-email=*)
+      PARSED_ADMIN_EMAIL="${arg#*=}"
+      ;;
+    --fortress-domain=*)
+      PARSED_FORTRESS_DOMAIN="${arg#*=}"
+      ;;
+    # Add other install-specific flags if needed here
+  esac
+  i=$((i + 1))
+done
+
+
+if [[ -n "${PARSED_ADMIN_EMAIL}" ]]; then
+    ADMIN_EMAIL_INPUT="${PARSED_ADMIN_EMAIL}"
+    info "Using ADMIN_EMAIL from command-line argument: ${ADMIN_EMAIL_INPUT}"
+elif [[ -n "${ADMIN_EMAIL}" ]]; then # Fallback to environment variable if not in params
     ADMIN_EMAIL_INPUT="${ADMIN_EMAIL}"
     info "Using ADMIN_EMAIL from environment: ${ADMIN_EMAIL_INPUT}"
 else
@@ -267,7 +301,10 @@ else
     done
 fi
 
-if [[ -n "${FORTRESS_DOMAIN}" ]]; then
+if [[ -n "${PARSED_FORTRESS_DOMAIN}" ]]; then
+    FORTRESS_DOMAIN_INPUT="${PARSED_FORTRESS_DOMAIN}"
+    info "Using FORTRESS_DOMAIN from command-line argument: ${FORTRESS_DOMAIN_INPUT}"
+elif [[ -n "${FORTRESS_DOMAIN}" ]]; then # Fallback to environment variable if not in params
     FORTRESS_DOMAIN_INPUT="${FORTRESS_DOMAIN}"
     info "Using FORTRESS_DOMAIN from environment: ${FORTRESS_DOMAIN_INPUT}"
 else
@@ -386,8 +423,11 @@ EOF
 info "Logrotate configuration for Fortress created."
 
 info "Installing Fortress CLI into ${FORTRESS_ROOT}/bin ..."
+# This block was already added correctly in the previous step
+# It ensures bin/fortress is copied to the final location
+# and symlinked BEFORE it's called again.
 mkdir -p "${FORTRESS_ROOT}/bin"
-cp "${FORTRESS_DIR}/bin/fortress" "${FORTRESS_ROOT}/bin/fortress"   # ${FORTRESS_DIR} is the repo you cloned
+cp "${FORTRESS_DIR}/bin/fortress" "${FORTRESS_ROOT}/bin/fortress"
 chmod +x "${FORTRESS_ROOT}/bin/fortress"
 ln -sf "${FORTRESS_ROOT}/bin/fortress" /usr/local/bin/fortress
 
@@ -471,4 +511,3 @@ echo "   sudo fortress app deploy myapp --domain=myapp.${FORTRESS_DOMAIN_INPUT} 
 echo ""
 warning "IMPORTANT: Store the generated passwords (PostgreSQL, Traefik Dashboard) in a secure password manager!"
 echo ""
-
