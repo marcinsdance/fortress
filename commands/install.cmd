@@ -407,11 +407,6 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-info "Installing 'fortress' command to /usr/local/bin/fortress..."
-ln -sf "${FORTRESS_BIN}" /usr/local/bin/fortress
-chmod +x /usr/local/bin/fortress
-info "'fortress' command is now globally available."
-
 info "Attempting initial start of Fortress core services (Traefik, PostgreSQL, Redis)..."
 if /usr/local/bin/fortress svc up -d proxy postgres redis; then
     info "Fortress core services started successfully."

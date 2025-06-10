@@ -2,7 +2,7 @@
 #
 # Fortress: Professional, Non-Interactive 'One-Liner' Installer
 #
-# Version: 4.0.1 # Zwiększ wersję, aby odzwierciedlić zmiany
+# Version: 4.0.1
 # Features:
 # - Non-interactive mode (-y, --yes) for automation (e.g., Ansible)
 # - Root privilege verification
@@ -18,9 +18,8 @@ set -e
 readonly REPO_URL="https://github.com/marcinsdance/fortress.git"
 INSTALL_BRANCH="main"
 NON_INTERACTIVE=false
-DEBUG_MODE=false # Nowa zmienna dla trybu debugowania
+DEBUG_MODE=false
 
-# Nowe zmienne do przechowywania wartości przekazanych z CLI
 ADMIN_EMAIL_CLI=""
 FORTRESS_DOMAIN_CLI=""
 
@@ -75,15 +74,15 @@ parse_args() {
         NON_INTERACTIVE=true
         shift 1
         ;;
-      --admin-email) # Nowa opcja dla admin emaila
+      --admin-email)
         ADMIN_EMAIL_CLI="$2"
         shift 2
         ;;
-      --fortress-domain) # Nowa opcja dla domeny Fortress
+      --fortress-domain)
         FORTRESS_DOMAIN_CLI="$2"
         shift 2
         ;;
-      --debug) # Nowa opcja dla trybu debugowania
+      --debug)
         DEBUG_MODE=true
         shift 1
         ;;
@@ -105,7 +104,6 @@ parse_args() {
     esac
   done
 
-  # Weryfikacja wymaganych argumentów w trybie non-interactive
   if [[ "$NON_INTERACTIVE" == "true" ]]; then
     if [[ -z "${ADMIN_EMAIL_CLI}" ]]; then
       msg_error "In non-interactive mode (--yes), --admin-email is required."
@@ -198,7 +196,6 @@ clone_and_install() {
 
   msg_info "Starting the main Fortress installer..."
 
-  # Przygotowanie zmiennych środowiskowych do przekazania do bin/fortress install
   local fortress_install_env=""
   if [[ -n "${ADMIN_EMAIL_CLI}" ]]; then
     fortress_install_env+="ADMIN_EMAIL='${ADMIN_EMAIL_CLI}' "
@@ -207,21 +204,16 @@ clone_and_install() {
     fortress_install_env+="FORTRESS_DOMAIN='${FORTRESS_DOMAIN_CLI}' "
   fi
 
-  # Przygotowanie opcji debugowania do przekazania do bin/fortress install
   local fortress_install_debug_option=""
   if [[ "$DEBUG_MODE" == "true" ]]; then
     fortress_install_debug_option="--debug"
   fi
 
-  # Uruchomienie głównego instalatora Fortress z przekazanymi zmiennymi środowiskowymi i opcjami
-  # Użyj 'env' do przekazania zmiennych środowiskowych do polecenia, które zostanie uruchomione
-  # Upewnij się, że opcja --debug jest poprawnie przekazana do bin/fortress
   if ! (cd "$tmp_dir" && env $fortress_install_env ./bin/fortress install $fortress_install_debug_option); then
     msg_error "The main Fortress installer failed. Please check the logs above for details."
   fi
 }
 
-# --- Main execution function ---
 main() {
   setup_colors
   parse_args "$@"
@@ -231,15 +223,23 @@ main() {
   check_os
   confirm_installation
   clone_and_install
-  # Zaktualizuj komunikat końcowy w zależności od tego, czy instalacja była interaktywna
-  if [[ "$NON_INTERACTIVE" == "true" ]]; then
-      msg_success "Fortress installation process has been successfully initiated and completed in non-interactive mode."
-      msg_info "Generated passwords and details are available in /opt/fortress/config/fortress.env"
-  else
-      msg_success "Fortress installation process has been successfully initiated."
-      msg_info "Follow the prompts from the installer. Generated passwords and details will be shown upon its completion."
-  fi
+
+  msg_info "Installing 'fortress' command to /usr/local/bin/fortress..."
+    if [[ -f "/opt/fortress/bin/fortress" ]]; then
+      sudo ln -sf "/opt/fortress/bin/fortress" "/usr/local/bin/fortress"
+      sudo chmod +x "/opt/fortress/bin/fortress"
+      msg_success "'fortress' command is now globally available."
+    else
+      msg_error "Failed to create symlink: /opt/fortress/bin/fortress not found. Manual intervention required."
+    fi
+
+    if [[ "$NON_INTERACTIVE" == "true" ]]; then
+        msg_success "Fortress installation process has been successfully initiated and completed in non-interactive mode."
+        msg_info "Generated passwords and details are available in /opt/fortress/config/fortress.env"
+    else
+        msg_success "Fortress installation process has been successfully initiated."
+        msg_info "Generated passwords and details will be shown upon its completion."
+    fi
 }
 
-# Run the script, passing all arguments to main
 main "$@"
