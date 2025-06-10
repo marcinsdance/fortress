@@ -1,1 +1,31 @@
-#
+# Fortress runtime files
+/opt/fortress/
+*.env
+*.env.local
+*.env.*.local
+
+# Backup files
+*.tar.gz
+*.sql
+*.backup
+
+# SSL certificates
+*.pem
+*.crt
+*.key
+acme.json
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
