@@ -2,13 +2,13 @@
 #
 # Fortress: Professional, Non-Interactive 'One-Liner' Installer
 #
-# Version: 4.0
+# Version: 4.0.1 # Zwiększ wersję, aby odzwierciedlić zmiany
 # Features:
 # - Non-interactive mode (-y, --yes) for automation (e.g., Ansible)
 # - Root privilege verification
 # - Dependency checks (git, docker)
 # - OS compatibility check
-# - Argument parsing (--branch, --tag)
+# - Argument parsing (--branch, --tag, --admin-email, --fortress-domain, --debug)
 # - Colored log output
 # - Reliable temporary file cleanup
 #
@@ -18,6 +18,11 @@ set -e
 readonly REPO_URL="https://github.com/marcinsdance/fortress.git"
 INSTALL_BRANCH="main"
 NON_INTERACTIVE=false
+DEBUG_MODE=false # Nowa zmienna dla trybu debugowania
+
+# Nowe zmienne do przechowywania wartości przekazanych z CLI
+ADMIN_EMAIL_CLI=""
+FORTRESS_DOMAIN_CLI=""
 
 # --- Colors and Logging Functions ---
 setup_colors() {
@@ -70,13 +75,28 @@ parse_args() {
         NON_INTERACTIVE=true
         shift 1
         ;;
+      --admin-email) # Nowa opcja dla admin emaila
+        ADMIN_EMAIL_CLI="$2"
+        shift 2
+        ;;
+      --fortress-domain) # Nowa opcja dla domeny Fortress
+        FORTRESS_DOMAIN_CLI="$2"
+        shift 2
+        ;;
+      --debug) # Nowa opcja dla trybu debugowania
+        DEBUG_MODE=true
+        shift 1
+        ;;
       -h|--help)
-        echo "Usage: $0 [--branch <name>] [--tag <name>] [-y|--yes]"
+        echo "Usage: $0 [--branch <name>] [--tag <name>] [-y|--yes] [--admin-email <email>] [--fortress-domain <domain>] [--debug]"
         echo ""
         echo "Options:"
-        echo "  --branch <name>  Install from a specific branch."
-        echo "  --tag <name>     Install a specific tag."
-        echo "  -y, --yes        Bypass confirmation prompts for non-interactive/automated installation."
+        echo "  --branch <name>     Install from a specific branch."
+        echo "  --tag <name>        Install a specific tag."
+        echo "  -y, --yes           Bypass confirmation prompts for non-interactive/automated installation."
+        echo "  --admin-email <email> Email for Let's Encrypt (required for non-interactive install)." # Zaktualizowany opis
+        echo "  --fortress-domain <domain> Primary domain for Fortress services (required for non-interactive install)." # Zaktualizowany opis
+        echo "  --debug             Enable debug mode (set -x) for the main Fortress installer."
         exit 0
         ;;
       *)
@@ -84,6 +104,16 @@ parse_args() {
         ;;
     esac
   done
+
+  # Weryfikacja wymaganych argumentów w trybie non-interactive
+  if [[ "$NON_INTERACTIVE" == "true" ]]; then
+    if [[ -z "${ADMIN_EMAIL_CLI}" ]]; then
+      msg_error "In non-interactive mode (--yes), --admin-email is required."
+    fi
+    if [[ -z "${FORTRESS_DOMAIN_CLI}" ]]; then
+      msg_error "In non-interactive mode (--yes), --fortress-domain is required."
+    fi
+  fi
 }
 
 check_root() {
@@ -167,7 +197,26 @@ clone_and_install() {
   fi
 
   msg_info "Starting the main Fortress installer..."
-  if ! (cd "$tmp_dir" && ./bin/fortress install); then
+
+  # Przygotowanie zmiennych środowiskowych do przekazania do bin/fortress install
+  local fortress_install_env=""
+  if [[ -n "${ADMIN_EMAIL_CLI}" ]]; then
+    fortress_install_env+="ADMIN_EMAIL='${ADMIN_EMAIL_CLI}' "
+  fi
+  if [[ -n "${FORTRESS_DOMAIN_CLI}" ]]; then
+    fortress_install_env+="FORTRESS_DOMAIN='${FORTRESS_DOMAIN_CLI}' "
+  fi
+
+  # Przygotowanie opcji debugowania do przekazania do bin/fortress install
+  local fortress_install_debug_option=""
+  if [[ "$DEBUG_MODE" == "true" ]]; then
+    fortress_install_debug_option="--debug"
+  fi
+
+  # Uruchomienie głównego instalatora Fortress z przekazanymi zmiennymi środowiskowymi i opcjami
+  # Użyj 'env' do przekazania zmiennych środowiskowych do polecenia, które zostanie uruchomione
+  # Upewnij się, że opcja --debug jest poprawnie przekazana do bin/fortress
+  if ! (cd "$tmp_dir" && env $fortress_install_env ./bin/fortress install $fortress_install_debug_option); then
     msg_error "The main Fortress installer failed. Please check the logs above for details."
   fi
 }
@@ -182,8 +231,14 @@ main() {
   check_os
   confirm_installation
   clone_and_install
-  msg_success "Fortress installation process has been successfully initiated."
-  msg_info "Follow the prompts from the installer. Generated passwords and details will be shown upon its completion."
+  # Zaktualizuj komunikat końcowy w zależności od tego, czy instalacja była interaktywna
+  if [[ "$NON_INTERACTIVE" == "true" ]]; then
+      msg_success "Fortress installation process has been successfully initiated and completed in non-interactive mode."
+      msg_info "Generated passwords and details are available in /opt/fortress/config/fortress.env"
+  else
+      msg_success "Fortress installation process has been successfully initiated."
+      msg_info "Follow the prompts from the installer. Generated passwords and details will be shown upon its completion."
+  fi
 }
 
 # Run the script, passing all arguments to main
