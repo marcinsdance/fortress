@@ -385,6 +385,12 @@ ${FORTRESS_ROOT}/logs/*.log
 EOF
 info "Logrotate configuration for Fortress created."
 
+info "Installing Fortress CLI into ${FORTRESS_ROOT}/bin ..."
+mkdir -p "${FORTRESS_ROOT}/bin"
+cp "${FORTRESS_DIR}/bin/fortress" "${FORTRESS_ROOT}/bin/fortress"   # ${FORTRESS_DIR} is the repo you cloned
+chmod +x "${FORTRESS_ROOT}/bin/fortress"
+ln -sf "${FORTRESS_ROOT}/bin/fortress" /usr/local/bin/fortress
+
 info "Creating systemd service 'fortress-core.service'..."
 cat > /etc/systemd/system/fortress-core.service <<EOF
 [Unit]
