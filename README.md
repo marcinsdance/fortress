@@ -13,44 +13,44 @@ Fortress is a Docker-based deployment tool designed for hosting multiple product
 ## Perfect For
 
 - 🚀 SaaS MVPs and side projects
-- 🏢 Small business applications  
+- 🏢 Small business applications
 - 👥 Digital agencies hosting client sites
 - 💼 Portfolio of small web apps
 - 🎓 Learning production deployment
 
 ## Features
 
-### 🔒 **Automatic SSL Certificates**
+### 🔒 Automatic SSL Certificates
 - Let's Encrypt integration
 - Auto-renewal
 - Force HTTPS redirect
 - HTTP/2 enabled
 
-### 📊 **Built-in Monitoring**
+### 📊 Built-in Monitoring
 - Prometheus metrics
 - Grafana dashboards
 - Health checks
 - Resource tracking
 
-### 💾 **Automated Backups**
+### 💾 Automated Backups
 - Scheduled backups
 - Database dumps
 - Volume snapshots
 - Easy restoration
 
-### 🚀 **Zero-Downtime Deployments**
+### 🚀 Zero-Downtime Deployments
 - Rolling updates
 - Health check validation
 - Automatic rollback
 - Version management
 
-### 🛡️ **Security First**
+### 🛡️ Security First
 - Automated firewall setup
 - Fail2ban integration
 - Security headers
 - Rate limiting
 
-### 🗄️ **Shared Services**
+### 🗄️ Shared Services
 - PostgreSQL database
 - Redis cache
 - Traefik proxy
@@ -60,25 +60,31 @@ Fortress is a Docker-based deployment tool designed for hosting multiple product
 
 ### Requirements
 
-- Ubuntu 20.04+ or Debian 11+ VPS
-- 2+ GB RAM (4-8 GB recommended)
-- 20+ GB disk space
-- Root or sudo access
+- **OS**: Rocky Linux 9 (officially supported and tested). Other Linux distributions may work but are not guaranteed.
+- **RAM**: 2+ GB (4–8 GB recommended)
+- **Disk Space**: 20+ GB
+- **Access**: Root or `sudo` user
 
 ### Installation
 
-```bash
-# One-line installer
-curl -fsSL https://get.fortress.io | sudo bash
+The recommended way to install Fortress is using the remote installer script.
 
-# Or clone and install manually
-git clone https://github.com/your-org/fortress.git
-cd fortress
-sudo ./install.sh
+```bash
+# Run the one-line installer with sudo
+curl -fsSL https://raw.githubusercontent.com/marcinsdance/fortress/main/install.sh | sudo bash
+```
+
+### Advanced Installation
+The installer script accepts flags for automated setups or for installing a specific version. Pass arguments after -s --.
+```bash
+# Install non-interactively (for Ansible, etc.)
+curl -fsSL https://raw.githubusercontent.com/marcinsdance/fortress/main/install.sh | sudo bash -s -- --yes
+
+# Install a specific branch (e.g., 'develop')
+curl -fsSL https://raw.githubusercontent.com/marcinsdance/fortress/main/install.sh | sudo bash -s -- --branch develop
 ```
 
 ### Deploy Your First App
-
 ```bash
 # Deploy a containerized app
 fortress app deploy myapp \
@@ -94,90 +100,48 @@ fortress app deploy demo \
 ```
 
 ## Core Commands
-
 ### Application Management
-
 ```bash
-# List all apps
-fortress app list
-
-# View app status
-fortress app status myapp
-
-# Update app (zero-downtime)
-fortress app update myapp --image=myapp:v2
-
-# Scale app
-fortress app scale myapp 3
-
-# Remove app
-fortress app remove myapp
+fortress app list                             # List all apps
+fortress app status myapp                     # View app status
+fortress app update myapp --image=myapp:v2    # Update app
+fortress app scale myapp 3                    # Scale app
+fortress app remove myapp                     # Remove app
 ```
 
 ### Resource Management
-
 ```bash
-# Set resource limits
-fortress app limits myapp --cpu=0.5 --memory=512M
-
-# View resource usage
-fortress resources show
-
-# Get optimization suggestions
-fortress resources optimize
+fortress app limits myapp --cpu=0.5 --memory=512M   # Set resource limits
+fortress resources show                             # View resource usage
+fortress resources optimize                         # Optimization suggestions
 ```
 
 ### Database Operations
-
 ```bash
-# Create database
-fortress db create myapp_db
-
-# Backup database
-fortress db backup myapp_db
-
-# Restore database
-fortress db restore myapp_db --from=backup.sql
-
-# Connect to database
-fortress db connect myapp_db
+fortress db create myapp_db                      # Create database
+fortress db backup myapp_db                      # Backup database
+fortress db restore myapp_db --from=backup.sql   # Restore database
+fortress db connect myapp_db                     # Connect to database
 ```
 
 ### Monitoring & Logs
-
 ```bash
-# View logs
-fortress logs myapp --follow
-
-# Check health
-fortress health check --all
-
-# Open monitoring dashboard
-fortress monitor dashboard
-
-# View metrics
-fortress monitor metrics myapp
+fortress logs myapp --follow            # View logs
+fortress health check --all             # Check health
+fortress monitor dashboard              # Open monitoring dashboard
+fortress monitor metrics myapp          # View metrics
 ```
 
 ### Backup & Restore
-
 ```bash
-# Create backup
-fortress backup create --full
-
-# Schedule backups
-fortress backup schedule --daily --retain=7
-
-# List backups
-fortress backup list
-
-# Restore from backup
-fortress restore myapp --date=2024-05-24
+fortress backup create --full               # Create backup
+fortress backup schedule --daily --retain=7 # Schedule backups
+fortress backup list                        # List backups
+fortress restore myapp --date=2024-05-24    # Restore backup
 ```
 
 ## Project Structure
-
-```
+```bash
 /opt/fortress/
 ├── apps/                    # Your applications
 │   ├── myapp/
@@ -189,18 +153,16 @@ fortress restore myapp --date=2024-05-24
 │   ├── traefik.yml
 │   ├── dynamic/
 │   └── certs/
-├── services/               # Shared services
-│   ├── postgres/          # PostgreSQL database
-│   ├── redis/            # Redis cache
-│   └── monitoring/       # Prometheus & Grafana
-├── backups/              # Backup storage
-└── config/              # Fortress configuration
+├── services/                # Shared services
+│   ├── postgres/            # PostgreSQL database
+│   ├── redis/               # Redis cache
+│   └── monitoring/          # Prometheus & Grafana
+├── backups/                 # Backup storage
+└── config/                  # Fortress configuration
 ```
 
 ## Application Configuration
-
 Create a simple app configuration:
-
 ```yaml
 # fortress.yml
 name: myapp
@@ -209,190 +171,144 @@ port: 3000
 image: myapp:latest
 
 environment:
-  NODE_ENV: production
-  DATABASE_URL: ${DATABASE_URL}
-  REDIS_URL: redis://redis:6379
+NODE_ENV: production
+DATABASE_URL: ${DATABASE_URL}
+REDIS_URL: redis://redis:6379
 
 resources:
-  cpu: 0.5
-  memory: 512M
+cpu: 0.5
+memory: 512M
 
 health_check:
-  path: /health
-  interval: 30s
+path: /health
+interval: 30s
 ```
 
 ## Example Deployments
-
 ### Node.js Application
-
 ```bash
-# Build your app
 docker build -t myapp:latest .
 
-# Deploy with Fortress
 fortress app deploy myapp \
-  --domain=myapp.com \
-  --port=3000 \
-  --image=myapp:latest \
-  --env-file=.env.production
+--domain=myapp.com \
+--port=3000 \
+--image=myapp:latest \
+--env-file=.env.production
 ```
 
 ### WordPress Site
-
 ```bash
 fortress app deploy myblog \
-  --domain=myblog.com \
-  --port=80 \
-  --image=wordpress:latest
+--domain=myblog.com \
+--port=80 \
+--image=wordpress:latest
 
-# Create database
 fortress db create myblog_wp
 ```
 
 ### Static Site
-
 ```bash
 fortress app deploy portfolio \
-  --domain=johndoe.com \
-  --port=80 \
-  --image=nginx:alpine \
-  --volume=./html:/usr/share/nginx/html:ro
+--domain=johndoe.com \
+--port=80 \
+--image=nginx:alpine \
+--volume=./html:/usr/share/nginx/html:ro
 ```
 
 ## Advanced Features
-
 ### Custom Domains
-
 ```bash
-# Add multiple domains
 fortress domain add myapp www.myapp.com
 fortress domain add myapp api.myapp.com
 ```
 
 ### Environment Management
-
 ```bash
-# Set environment variables
 fortress env set myapp API_KEY=secret
 fortress env set myapp --file=.env.production
-
-# View environment
 fortress env list myapp
 ```
 
 ### SSL Management
-
 ```bash
-# Force SSL renewal
 fortress ssl renew myapp.com
-
-# Add custom certificate
 fortress ssl add myapp.com --cert=cert.pem --key=key.pem
 ```
 
 ### Security
-
 ```bash
-# Update firewall rules
 fortress firewall allow 8080
-
-# View security status
 fortress security status
-
-# Run security scan
 fortress security scan
 ```
 
 ## Architecture
-
 Fortress uses a simple but powerful architecture:
 
-1. **Traefik Proxy**: Handles all incoming traffic, SSL, and routing
-2. **Docker Compose**: Manages application containers
-3. **Shared Services**: PostgreSQL and Redis available to all apps
-4. **Monitoring Stack**: Prometheus and Grafana for observability
-5. **Backup System**: Automated backups with configurable retention
+- **Traefik Proxy**: Handles all incoming traffic, SSL, and routing
+- **Docker Compose**: Manages application containers
+- **Shared Services**: PostgreSQL and Redis available to all apps
+- **Monitoring Stack**: Prometheus and Grafana for observability
+- **Backup System**: Automated backups with configurable retention
 
 ## Resource Usage
 
 Typical resource usage on a 4GB RAM VPS:
 
 - **Fortress Core**: ~500MB RAM
-- **Each App**: 100-500MB RAM (configurable)
+- **Each App**: 100–500MB RAM
 - **Database**: ~200MB RAM
 - **Redis**: ~100MB RAM
 - **Monitoring**: ~300MB RAM
 
-This allows hosting 10-20 small applications comfortably.
+This allows hosting 10–20 small applications comfortably.
 
 ## Comparison
 
-| Feature | Fortress | Kubernetes | Traditional VPS | PaaS (Heroku) |
-|---------|----------|------------|-----------------|---------------|
-| Complexity | Low | High | Medium | Low |
-| Cost | $20-40/mo | $100+/mo | $20-40/mo | $100+/mo |
-| Setup Time | 5 minutes | Hours | Hours | Minutes |
-| Scalability | Single VPS | Unlimited | Single VPS | Unlimited |
-| Control | Full | Full | Full | Limited |
+| Feature        | Fortress | Kubernetes | Traditional VPS | PaaS (Heroku) |
+|----------------|----------|------------|------------------|----------------|
+| Complexity     | Low      | High       | Medium           | Low            |
+| Cost           | $20-40/mo| $100+/mo   | $20-40/mo        | $100+/mo       |
+| Setup Time     | 5 minutes| Hours      | Hours            | Minutes        |
+| Scalability    | Single VPS | Unlimited | Single VPS       | Unlimited      |
+| Control        | Full     | Full       | Full             | Limited        |
+
 
 ## Best Practices
-
-1. **One Database Per App**: Use separate databases for isolation
-2. **Set Resource Limits**: Prevent one app from consuming all resources
-3. **Monitor Everything**: Use built-in monitoring to catch issues early
-4. **Automate Backups**: Set up daily backups with proper retention
-5. **Use Health Checks**: Ensure apps are actually working, not just running
-6. **Keep Images Small**: Use multi-stage builds and Alpine Linux
+- One Database Per App: Use separate databases for isolation
+- Set Resource Limits: Prevent one app from consuming all resources
+- Monitor Everything: Use built-in monitoring to catch issues early
+- Automate Backups: Set up daily backups with proper retention
+- Use Health Checks: Ensure apps are actually working, not just running
+- Keep Images Small: Use multi-stage builds and Alpine Linux
 
 ## Troubleshooting
-
 ### App Won't Start
-
 ```bash
-# Check logs
 fortress logs myapp --tail=50
-
-# Inspect container
 fortress exec myapp -- /bin/sh
-
-# Verify health
 fortress health check myapp --verbose
 ```
 
 ### SSL Issues
-
 ```bash
-# Check certificate status
 fortress ssl status myapp.com
-
-# View Traefik logs
 docker logs fortress_traefik
 ```
 
 ### Database Problems
-
 ```bash
-# Check connection
 fortress db test myapp_db
-
-# View database logs
 fortress logs postgres
 ```
 
 ## Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see CONTRIBUTING.md for guidelines.
 
 ## Support
-
-- 📖 Documentation: [https://fortress.dev/docs](https://fortress.dev/docs)
-- 💬 Discord: [https://discord.gg/fortress](https://discord.gg/fortress)
-- 🐛 Issues: [GitHub Issues](https://github.com/your-org/fortress/issues)
-- 💼 Commercial Support: support@fortress.dev
+🐛 Issues & Bug Reports: https://github.com/marcinsdance/fortress/issues
 
 ## License
-
 Fortress is open source software licensed under the MIT License.
 
 ---
