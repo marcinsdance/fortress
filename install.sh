@@ -96,7 +96,7 @@ check_os() {
       ;;
     *)
       msg_warning "Detected unsupported OS: ${PRETTY_NAME}."
-      read -p "Fortress is tested on Rocky/Ubuntu/Debian. Continue anyway? (y/N) " -n 1 -r
+      read -p "Fortress is tested only on Rocky. Continue anyway? (y/N) " -n 1 -r
       echo
       if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         msg_error "Installation cancelled by user."
