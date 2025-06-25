@@ -1,6 +1,203 @@
 #!/usr/bin/env bash
 [[ ! ${FORTRESS_DIR} ]] && >&2 echo -e "\033[31mThis script is not intended to be run directly!\033[0m" && exit 1
 
+function importCompose() {
+  local COMPOSE_FILE="$1"
+  local APP_NAME="$2"
+  local DOMAIN="$3"
+  local ENV_FILE="$4"
+  
+  [[ -z "${COMPOSE_FILE}" ]] && fatal "import: Docker Compose file path is required."
+  [[ -z "${APP_NAME}" ]] && fatal "import: App name is required."
+  
+  # Convert relative path to absolute
+  if [[ ! "${COMPOSE_FILE}" = /* ]]; then
+    COMPOSE_FILE="$(pwd)/${COMPOSE_FILE}"
+  fi
+  
+  [[ ! -f "${COMPOSE_FILE}" ]] && fatal "import: Docker Compose file '${COMPOSE_FILE}' not found."
+  
+  if [[ ! "${APP_NAME}" =~ ^[a-z0-9-]+$ ]]; then
+    fatal "import: App name must contain only lowercase letters, numbers, and hyphens."
+  fi
+  
+  info "Importing docker-compose project '${APP_NAME}' from: ${COMPOSE_FILE}"
+  
+  # Create app directory
+  local APP_DIR="${FORTRESS_APPS_DIR}/${APP_NAME}"
+  if [[ -d "${APP_DIR}" ]]; then
+    warning "App directory '${APP_DIR}' already exists. Updating configuration..."
+  else
+    mkdir -p "${APP_DIR}/data"
+    info "Created app directory: ${APP_DIR}"
+  fi
+  
+  # Copy compose file and process it
+  local TARGET_COMPOSE="${APP_DIR}/docker-compose.yml"
+  cp "${COMPOSE_FILE}" "${TARGET_COMPOSE}"
+  
+  # Process the compose file to add Fortress integration
+  processComposeFile "${TARGET_COMPOSE}" "${APP_NAME}" "${DOMAIN}"
+  
+  # Handle environment file
+  local env_file_path="${APP_DIR}/.env"
+  if [[ -n "${ENV_FILE}" ]] && [[ -f "${ENV_FILE}" ]]; then
+    cp "${ENV_FILE}" "${env_file_path}"
+    info "Copied environment file from ${ENV_FILE}"
+  else
+    # Create basic .env file
+    info "Creating basic .env file"
+    cat > "${env_file_path}" <<EOF
+APP_NAME=${APP_NAME}
+APP_DOMAIN=${DOMAIN}
+DATABASE_URL=postgresql://\${DB_USER}:\${DB_PASS}@postgres:5432/\${DB_NAME}
+REDIS_URL=redis://redis:6379
+NODE_ENV=production
+EOF
+  fi
+  
+  # Create fortress metadata
+  local fortress_metadata_file="${APP_DIR}/fortress.yml"
+  info "Generating metadata file at ${fortress_metadata_file}"
+  cat > "${fortress_metadata_file}" <<EOF
+name: ${APP_NAME}
+type: imported
+domain: ${DOMAIN}
+source: docker-compose
+created: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+status: deploying
+original_compose: $(basename "${COMPOSE_FILE}")
+EOF
+  
+  chown -R fortress:fortress "${APP_DIR}" 2>/dev/null || true
+  chmod 600 "${env_file_path}"
+  
+  # Deploy the application
+  info "Starting application '${APP_NAME}' from imported compose file..."
+  (cd "${APP_DIR}" && ${DOCKER_COMPOSE_COMMAND} -p "${APP_NAME}" up -d --remove-orphans)
+  
+  # Update status
+  sed -i 's/status: deploying/status: running/' "${fortress_metadata_file}"
+  
+  success "Application '${APP_NAME}' imported and deployed from docker-compose.yml"
+  echo ""
+  if [[ -n "${DOMAIN}" ]]; then
+    echo "  URL: https://${DOMAIN}"
+  fi
+  echo "  App Directory: ${APP_DIR}"
+  echo "  Manage with: fortress app <status|logs|stop|remove|...> ${APP_NAME}"
+}
+
+function processComposeFile() {
+  local COMPOSE_FILE="$1"
+  local APP_NAME="$2"
+  local DOMAIN="$3"
+  
+  info "Processing compose file to add Fortress integration..."
+  
+  # Add fortress network and labels
+  addFortressIntegration "${COMPOSE_FILE}" "${APP_NAME}" "${DOMAIN}"
+}
+
+function addFortressIntegration() {
+  local COMPOSE_FILE="$1"
+  local APP_NAME="$2"
+  local DOMAIN="$3"
+  
+  # Use Python to modify the YAML file
+  python3 - "${COMPOSE_FILE}" "${APP_NAME}" "${DOMAIN}" <<'EOF'
+import sys
+import yaml
+
+def add_fortress_integration(compose_file, app_name, domain):
+    with open(compose_file, 'r') as f:
+        compose = yaml.safe_load(f)
+    
+    if not compose or 'services' not in compose:
+        print("Warning: No services found in compose file")
+        return
+    
+    # Add fortress network to networks section
+    if 'networks' not in compose:
+        compose['networks'] = {}
+    compose['networks']['fortress'] = {'external': True}
+    
+    # Find main service (first with ports)
+    main_service = None
+    main_port = "3000"
+    
+    for service_name, service_config in compose['services'].items():
+        # Add fortress network to all services
+        if 'networks' not in service_config:
+            service_config['networks'] = ['fortress']
+        elif isinstance(service_config['networks'], list):
+            if 'fortress' not in service_config['networks']:
+                service_config['networks'].append('fortress')
+        elif isinstance(service_config['networks'], dict):
+            service_config['networks']['fortress'] = None
+        
+        # Add fortress labels to all services
+        if 'labels' not in service_config:
+            service_config['labels'] = []
+        
+        fortress_labels = [
+            f"fortress.app={app_name}",
+            "fortress.managed=true",
+            "fortress.type=imported"
+        ]
+        
+        for label in fortress_labels:
+            if label not in service_config['labels']:
+                service_config['labels'].append(label)
+        
+        # Detect main service for Traefik
+        if 'ports' in service_config and main_service is None:
+            main_service = service_name
+            ports = service_config['ports']
+            if ports:
+                port_mapping = ports[0]
+                if isinstance(port_mapping, str) and ':' in port_mapping:
+                    main_port = port_mapping.split(':')[-1]
+                elif isinstance(port_mapping, int):
+                    main_port = str(port_mapping)
+    
+    # Add Traefik labels to main service
+    if main_service and domain:
+        service = compose['services'][main_service]
+        
+        traefik_labels = [
+            "traefik.enable=true",
+            "traefik.docker.network=fortress",
+            f"traefik.http.routers.{app_name}.rule=Host(`{domain}`)",
+            f"traefik.http.routers.{app_name}.entrypoints=web",
+            f"traefik.http.routers.{app_name}.middlewares={app_name}-redirect@file",
+            f"traefik.http.routers.{app_name}-secure.rule=Host(`{domain}`)",
+            f"traefik.http.routers.{app_name}-secure.entrypoints=websecure",
+            f"traefik.http.routers.{app_name}-secure.tls=true",
+            f"traefik.http.routers.{app_name}-secure.tls.certresolver=letsencrypt",
+            f"traefik.http.routers.{app_name}-secure.middlewares=fortress-security-headers@file,fortress-rate-limit@file",
+            f"traefik.http.services.{app_name}.loadbalancer.server.port={main_port}",
+            f"traefik.http.middlewares.{app_name}-redirect.redirectscheme.scheme=https",
+            f"traefik.http.middlewares.{app_name}-redirect.redirectscheme.permanent=true"
+        ]
+        
+        for label in traefik_labels:
+            if label not in service['labels']:
+                service['labels'].append(label)
+    
+    # Write back to file
+    with open(compose_file, 'w') as f:
+        yaml.dump(compose, f, default_flow_style=False)
+
+if __name__ == "__main__":
+    compose_file = sys.argv[1]
+    app_name = sys.argv[2]
+    domain = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None
+    
+    add_fortress_integration(compose_file, app_name, domain)
+EOF
+}
+
 function deployApp() {
   local APP_NAME=""
   local DOMAIN=""
@@ -9,6 +206,7 @@ function deployApp() {
   local ENV_FILE=""
   local APP_TYPE="web"
   local REPLICAS=1
+  local COMPOSE_FILE=""
   
   local args_to_parse=("$@") 
   local remaining_args=()
@@ -35,6 +233,9 @@ function deployApp() {
       --replicas=*)
         REPLICAS="${arg#*=}"
         ;;
+      --compose-file=*)
+        COMPOSE_FILE="${arg#*=}"
+        ;;
       -*)
         fatal "deployApp: Unknown option: $arg"
         ;;
@@ -54,6 +255,13 @@ function deployApp() {
   fi
   
   [[ -z "${APP_NAME}" ]] && fatal "deployApp: App name is required as the first argument."
+  
+  # Check if we're deploying from existing docker-compose file
+  if [[ -n "${COMPOSE_FILE}" ]]; then
+    importCompose "${COMPOSE_FILE}" "${APP_NAME}" "${DOMAIN}" "${ENV_FILE}"
+    return
+  fi
+  
   [[ -z "${DOMAIN}" ]] && fatal "deployApp: --domain=<domain.com> is required."
   [[ -z "${PORT}" ]] && fatal "deployApp: --port=<internal_app_port> is required."
   [[ -z "${IMAGE}" ]] && IMAGE="${APP_NAME}:latest" 
@@ -486,6 +694,42 @@ fi
 case "${SUBCOMMAND}" in
   deploy)
     deployApp "${SUBCOMMAND_ARGS[@]}"
+    ;;
+  import)
+    # Parse import arguments: <compose-file> <app-name> [--domain=<domain>] [--env-file=<file>]
+    local COMPOSE_FILE_ARG=""
+    local APP_NAME_ARG=""
+    local DOMAIN_ARG=""
+    local ENV_FILE_ARG=""
+    
+    # Parse arguments for import command
+    local import_args=("${SUBCOMMAND_ARGS[@]}")
+    local idx=0
+    
+    while [[ $idx -lt ${#import_args[@]} ]]; do
+      local arg="${import_args[$idx]}"
+      case $arg in
+        --domain=*)
+          DOMAIN_ARG="${arg#*=}"
+          ;;
+        --env-file=*)
+          ENV_FILE_ARG="${arg#*=}"
+          ;;
+        -*)
+          fatal "app import: Unknown option: $arg"
+          ;;
+        *)
+          if [[ -z "${COMPOSE_FILE_ARG}" ]]; then
+            COMPOSE_FILE_ARG="$arg"
+          elif [[ -z "${APP_NAME_ARG}" ]]; then
+            APP_NAME_ARG="$arg"
+          fi
+          ;;
+      esac
+      idx=$((idx + 1))
+    done
+    
+    importCompose "${COMPOSE_FILE_ARG}" "${APP_NAME_ARG}" "${DOMAIN_ARG}" "${ENV_FILE_ARG}"
     ;;
   list)
     listApps

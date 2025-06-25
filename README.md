@@ -109,6 +109,12 @@ fortress app scale myapp 3                    # Scale app
 fortress app remove myapp                     # Remove app
 ```
 
+### Docker Compose Import
+```bash
+fortress app import docker-compose.yml myapp --domain=myapp.com    # Import existing compose file
+fortress app deploy myapp --compose-file=docker-compose.yml --domain=myapp.com  # Deploy with compose file
+```
+
 ### Resource Management
 ```bash
 fortress app limits myapp --cpu=0.5 --memory=512M   # Set resource limits
@@ -193,6 +199,18 @@ fortress app deploy myapp \
 --domain=myapp.com \
 --port=3000 \
 --image=myapp:latest \
+--env-file=.env.production
+```
+
+### Import Existing Docker Compose Project
+```bash
+# Import a complete docker-compose.yml project
+fortress app import ./my-project/docker-compose.yml myapp --domain=myapp.com
+
+# Or use deploy with compose file
+fortress app deploy myapp \
+--compose-file=./docker-compose.yml \
+--domain=myapp.com \
 --env-file=.env.production
 ```
 
