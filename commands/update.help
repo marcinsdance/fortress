@@ -1,0 +1,62 @@
+FORTRESS_USAGE="
+$(echo -e "${COLOR_CYAN}fortress update${COLOR_RESET}") - Aktualizacja systemu Fortress
+
+$(echo -e "${COLOR_YELLOW}UŻYCIE:${COLOR_RESET}")
+    fortress update [OPTIONS]
+    fortress update verify
+    fortress update backup
+    fortress update version
+
+$(echo -e "${COLOR_YELLOW}OPCJE:${COLOR_RESET}")
+    --branch <nazwa>    Aktualizuj z określonej gałęzi (domyślnie: main)
+    --dry-run          Symulacja aktualizacji bez wykonywania zmian
+    --force            Wymuś aktualizację nawet przy tej samej wersji
+    --no-backup        Pomiń tworzenie backup (niezalecane)
+    -h, --help         Wyświetl tę pomoc
+
+$(echo -e "${COLOR_YELLOW}PODKOMENDY:${COLOR_RESET}")
+    verify             Weryfikuj system po aktualizacji
+    backup             Utwórz backup systemu
+    version            Wyświetl informacje o wersji
+
+$(echo -e "${COLOR_YELLOW}PRZYKŁADY:${COLOR_RESET}")
+    # Standardowa aktualizacja
+    fortress update
+
+    # Symulacja aktualizacji
+    fortress update --dry-run
+
+    # Aktualizacja z gałęzi develop
+    fortress update --branch develop
+
+    # Weryfikacja systemu po aktualizacji
+    fortress update verify
+
+    # Backup systemu
+    fortress update backup
+
+    # Informacje o wersji
+    fortress update version
+
+$(echo -e "${COLOR_YELLOW}UWAGI:${COLOR_RESET}")
+    $(echo -e "${COLOR_GREEN}✓${COLOR_RESET}") Aktualizacja zachowuje wszystkie aplikacje i dane
+    $(echo -e "${COLOR_GREEN}✓${COLOR_RESET}") Przed aktualizacją tworzony jest automatyczny backup
+    $(echo -e "${COLOR_GREEN}✓${COLOR_RESET}") Aplikacje działają bez przerwy podczas aktualizacji
+    $(echo -e "${COLOR_GREEN}✓${COLOR_RESET}") W razie problemów możliwy jest rollback do poprzedniej wersji
+
+$(echo -e "${COLOR_YELLOW}PROCES AKTUALIZACJI:${COLOR_RESET}")
+    1. Tworzenie backup systemu
+    2. Pobieranie najnowszej wersji z GitHub
+    3. Sprawdzenie kompatybilności
+    4. Zatrzymanie usług Fortress (nie aplikacji)
+    5. Aktualizacja plików systemu
+    6. Restart usług Fortress
+    7. Weryfikacja poprawności działania
+
+$(echo -e "${COLOR_YELLOW}ROLLBACK:${COLOR_RESET}")
+    W przypadku problemów backup znajduje się w:
+    /opt/fortress/backups/system/
+
+    Przywracanie poprzedniej wersji:
+    fortress restore --system --latest
+"

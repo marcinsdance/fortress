@@ -144,6 +144,7 @@ $(echo -e "${COLOR_YELLOW}Operations:${COLOR_RESET}")
   monitor           View monitoring dashboards
   health            Check system and app health
   resources         View and manage resource usage
+  update            Update Fortress system
   
 $(echo -e "${COLOR_YELLOW}Security:${COLOR_RESET}")
   security          Security management commands
