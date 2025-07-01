@@ -133,9 +133,18 @@ fortress db connect myapp_db                     # Connect to database
 ### Monitoring & Logs
 ```bash
 fortress logs myapp --follow            # View logs
+fortress logs all --tail 50             # View logs for all components
+fortress ssl status                     # Check SSL certificates
 fortress health check --all             # Check health
 fortress monitor dashboard              # Open monitoring dashboard
 fortress monitor metrics myapp          # View metrics
+```
+
+### System Updates
+```bash
+fortress update                         # Update Fortress system
+fortress update --dry-run              # Simulate update
+fortress update verify                 # Verify system after update
 ```
 
 ### Backup & Restore
@@ -249,9 +258,28 @@ fortress env list myapp
 
 ### SSL Management
 ```bash
-fortress ssl renew myapp.com
-fortress ssl add myapp.com --cert=cert.pem --key=key.pem
+fortress ssl status                     # Show SSL certificate status
+fortress ssl list                      # List all certificates
+fortress ssl renew myapp.com           # Renew Let's Encrypt certificate
+fortress ssl add cert.crt cert.key     # Add manual SSL certificate
 ```
+
+### System Updates
+```bash
+fortress update                         # Update Fortress system
+fortress update --dry-run              # Simulate update without changes
+fortress update --branch develop       # Update from specific branch
+fortress update verify                 # Verify system after update
+fortress update backup                 # Create system backup
+```
+
+Fortress includes a comprehensive update system that provides:
+- ✅ **Zero Downtime**: Applications continue running during updates
+- ✅ **Automatic Backup**: Creates backup before each update
+- ✅ **Rollback Support**: Quick return to previous version if needed
+- ✅ **Data Preservation**: All configurations and data remain intact
+
+For detailed update instructions, see [UPDATE.md](UPDATE.md).
 
 ### Security
 ```bash
