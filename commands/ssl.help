@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+[[ ! ${FORTRESS_DIR} ]] && >&2 echo -e "\033[31mThis script is not intended to be run directly!\033[0m" && exit 1
+
+FORTRESS_USAGE=$(cat <<EOF
+$(echo -e "${COLOR_YELLOW}Usage:${COLOR_RESET}")
+  fortress ssl <COMMAND> [OPTIONS]
+
+$(echo -e "${COLOR_YELLOW}Description:${COLOR_RESET}")
+  Manage SSL certificates for Fortress applications and services.
+  Supports both Let's Encrypt automatic certificates and manual certificate management.
+
+$(echo -e "${COLOR_YELLOW}Commands:${COLOR_RESET}")
+  status              Show SSL certificate status (default)
+  list                List all SSL certificates with details
+  renew <domain>      Renew Let's Encrypt certificate for domain
+  add <cert> <key> [name]  Add manual SSL certificate
+  remove <name>       Remove manual SSL certificate
+
+$(echo -e "${COLOR_YELLOW}Examples:${COLOR_RESET}")
+  fortress ssl status                    # Show certificate status
+  fortress ssl list                     # List all certificates  
+  fortress ssl renew example.com        # Renew Let's Encrypt cert for example.com
+  fortress ssl add cert.crt cert.key    # Add manual certificate
+  fortress ssl remove mycert             # Remove manual certificate
+
+$(echo -e "${COLOR_YELLOW}Notes:${COLOR_RESET}")
+  - Let's Encrypt certificates are managed automatically by Traefik
+  - Manual certificates should be placed in the proxy/certs directory
+  - Traefik will be restarted when adding/removing manual certificates
+  - For Let's Encrypt renewals, ensure your domain points to this server
+  - Certificate files are stored in: ${FORTRESS_PROXY_DIR}/certs/
+  - Let's Encrypt data is stored in: ${FORTRESS_PROXY_DIR}/acme.json
+EOF
+)

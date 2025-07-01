@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+[[ ! ${FORTRESS_DIR} ]] && >&2 echo -e "\033[31mThis script is not intended to be run directly!\033[0m" && exit 1
+
+FORTRESS_USAGE=$(cat <<EOF
+$(echo -e "${COLOR_YELLOW}Usage:${COLOR_RESET}")
+  fortress logs [TARGET] [OPTIONS]
+
+$(echo -e "${COLOR_YELLOW}Description:${COLOR_RESET}")
+  Show logs for Fortress components including applications, services, and infrastructure.
+
+$(echo -e "${COLOR_YELLOW}Targets:${COLOR_RESET}")
+  <app-name>        Show logs for a specific application
+  proxy             Show logs for Traefik proxy service
+  postgres          Show logs for PostgreSQL service  
+  redis             Show logs for Redis service
+  all               Show logs for all services and applications
+
+$(echo -e "${COLOR_YELLOW}Options:${COLOR_RESET}")
+  --follow, -f      Follow log output (live tail)
+  --tail N          Show last N lines (default: 100)
+  --since TIME      Show logs since timestamp (e.g. 2h, 1m30s)
+  --timestamps, -t  Show timestamps
+  --no-color        Disable colored output
+
+$(echo -e "${COLOR_YELLOW}Examples:${COLOR_RESET}")
+  fortress logs myapp                    # Show last 100 lines for myapp
+  fortress logs myapp --follow           # Follow myapp logs in real-time  
+  fortress logs proxy --tail 50          # Show last 50 lines for proxy
+  fortress logs postgres --since 1h      # Show postgres logs from last hour
+  fortress logs all --tail 20            # Show last 20 lines for all components
+EOF
+)
